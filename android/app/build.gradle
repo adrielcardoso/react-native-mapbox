@@ -134,6 +134,7 @@ android {
 }
 
 dependencies {
+    implementation project(':react-native-gesture-handler')
 
     implementation (project(':@mapbox_react-native-mapbox-gl')) {
         compile ('com.squareup.okhttp3:okhttp:3.6.0') {
