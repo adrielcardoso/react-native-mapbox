@@ -6,18 +6,27 @@ import { StyleSheet,
   Image,
   Animated,
   Platform,
+  StatusBar,
   TouchableOpacity,
 } from 'react-native';
+
 import MapboxGL from '@mapbox/react-native-mapbox-gl';
+// import StoreLocatorKit from '@mapbox/store-locator-react-native';
+
 import Config from '../Config';
 import Carousel from 'react-native-snap-carousel';
 import ImageView from 'react-native-image-view';
 
-MapboxGL.setAccessToken('pk.eyJ1IjoiYWRyaWVsY2FyZG9zbyIsImEiOiJjam81eGN3bDgwN2N4M3BtZHkyeWppb3Z1In0.2KjraJLi6eHQGYubEFaPtQ');
+const IS_IOS = Platform.OS === 'ios';
+const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1IjoiYWRyaWVsY2FyZG9zbyIsImEiOiJjam81eGN3bDgwN2N4M3BtZHkyeWppb3Z1In0.2KjraJLi6eHQGYubEFaPtQ';
 
 const { width, height } = Dimensions.get("window");
+const CARD_HEIGHT = height / 4;
+const CARD_WIDTH = width * 0.40;
 
 export default class MapScreen extends React.Component {
+
+  mapView;
 
   static latLongDefine = [
     {
@@ -35,43 +44,106 @@ export default class MapScreen extends React.Component {
     },
   ];
 
-  constructor(props) {
-    super(props);
-    this.state = {
-      tipo: '',
-      renderGallery:false,
-      visible: false,
-      currentView: null,
-      images: [],
-      entries: [
-        {
-          title:"Restaurante X"
+    constructor(props) {
+      super(props);
+      this.state = {
+        tipo: '',
+        directions:null,
+        renderGallery:false,
+        visible: false,
+        currentView: null,
+        images: [],
+        entries: [
+          {
+            title:"Restaurante X"
+          },
+          {
+            title:"Restaurante Y"
+          },
+          {
+            title:"Restaurante Z"
+          },
+          {
+            title:"Restaurante X1"
+          }
+        ],
+        loading: false,
+        pointers: {
+          features: [],
         },
-        {
-          title:"Restaurante Y"
+        pointersComplete: [],
+        query: "",
+        currentItem:null,
+        featureCollection: {
+          type: 'FeatureCollection',
+          features: Map.latLongDefine,
         },
-        {
-          title:"Restaurante Z"
-        },
-        {
-          title:"Restaurante X1"
-        }
-      ],
-      loading: false,
-      pointers: {
-        features: [],
-      },
-      pointersComplete: [],
-      query: "",
-      currentItem:null,
-      featureCollection: {
-        type: 'FeatureCollection',
-        features: Map.latLongDefine,
       }
     }
-  }
 
-  componentWillMount(){
+    async fetchDirections (origin, dest) {
+      const originLatLng = {
+        latitude: origin[1],
+        longitude: origin[0],
+      };
+      
+      const destLatLng = {
+        latitude: dest[1],
+        longitude: dest[0],
+      };
+    
+      const requestOptions = {
+        profile: this.props.type,
+        geometry: 'polyline',
+      };
+    
+      let res = null;
+      try {
+        res = await mapboxClient.getDirections([
+          originLatLng,
+          destLatLng,
+        ], requestOptions);
+      } catch (e) {
+        console.log(e);
+      }
+      
+      if (res !== null) {
+        const directions = res.entity.routes[0];
+        this.setState({ directions: directions });
+      }
+    }
+
+    onDismiss () {
+      StatusBar.setBarStyle('dark-content');
+      this.setState({ activeTheme: null });
+    }
+
+    async componentWillMount () {
+
+      this.animation = new Animated.Value(0);
+      MapboxGL.setAccessToken(MAPBOX_ACCESS_TOKEN);
+      this.findLocations();
+
+      this.animation.addListener(({ value }) => {
+        let index = Math.floor(value / CARD_WIDTH + 0.3); // animate 30% away from landing on the next item
+        if(index >= this.state.pointers.features.length) {
+          index = this.state.pointers.features.length - 1;
+        }
+        if(index <= 0) {
+          index = 0;
+        }
+        clearTimeout(this.regionTimeout);
+        this.regionTimeout = setTimeout(() => {
+          if(this.index !== index) {
+            this.index = index;
+            const { coordinates } = this.state.pointers.features[index].geometry;
+            this._map.flyTo(coordinates, 2500);
+          }
+        }, 10);
+      });
+    }
+
+    async findLocations(){
 
       let tipo =  '';
 
@@ -122,7 +194,7 @@ export default class MapScreen extends React.Component {
 
   render() {
     
-    const zooLevel  = 11;
+    const zooLevel  = 13;
     const logoEnabled = false;
     const compassEnabled = true;
     const rotateEnabled = true;
@@ -130,7 +202,7 @@ export default class MapScreen extends React.Component {
     return (
       <View style={styles.container}>
           <MapboxGL.MapView
-            ref={this.captureRef}
+            ref={(c) => this._map = c}
             showUserLocation
             rotateEnabled={rotateEnabled}
             logoEnabled={logoEnabled}
@@ -140,7 +212,7 @@ export default class MapScreen extends React.Component {
             style={styles.container}
             styleURL={MapboxGL.StyleURL.Light}
           >
-            <MapboxGL.ShapeSource 
+            <MapboxGL.Animated.ShapeSource 
                 id="bar" shape={this.state.pointers != null ? this.state.pointers : this.state.featureCollection} images={{ 
                         1: require('./../assets/marcadores/marker-ficar.png'),
                         2: require('./../assets/marcadores/marker-comer-bar.png'),
@@ -148,10 +220,9 @@ export default class MapScreen extends React.Component {
                         4: require('./../assets/marcadores/marker-lazer.png'),
                         5: require('./../assets/marcadores/marker-servicos.png'),
                     }}>
-                    <MapboxGL.SymbolLayer id="bar" style={mStyles.icon} />
-            </MapboxGL.ShapeSource>
+                    <MapboxGL.Animated.SymbolLayer id="bar" style={mStyles.icon} />
+            </MapboxGL.Animated.ShapeSource>
           </MapboxGL.MapView>
-
           {this.renderCards()}
       </View>
     )
@@ -170,7 +241,7 @@ export default class MapScreen extends React.Component {
                   sliderWidth={width}
                   itemWidth={200}
                   onScroll={(event)=>{
-                      // this.animation.setValue(event.nativeEvent.contentOffset.x);
+                      this.animation.setValue(event.nativeEvent.contentOffset.x);
                   }}
                   useScrollView={true}
               />
@@ -199,59 +270,64 @@ export default class MapScreen extends React.Component {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+      flex: 1,
+  },
+  scrollView: {
+    position: "absolute",
+    bottom: 20,
+    left: 0,
+    right: 0,
+    paddingVertical: 10,
   },
   card: {
-    //   padding: 10,
-      elevation: 1,
-      backgroundColor: "#fff",
-      marginHorizontal: 5,
-    //   margin: 30,
-      shadowColor: "rgba(0,72,51, 0.9)",
-      shadowRadius: 5,
-      shadowOpacity: 0.3,
-      shadowOffset: { x: 0, y: 0 },
-      height: Dimensions.get('window').height / 3,
-      width: Dimensions.get('window').width * 0.5,
-    },
-    cardImage: {
-      flex: 5,
-      width: "100%",
-      height: "100%",
-      alignSelf: "center",
-    },
-    textContent: {
-      flex: 1,
-      paddingLeft: 8,
-      paddingTop:8
-    },
-    cardtitle: {
-      fontSize: 14,
-      fontWeight: "bold",
-    },
-    cardDescription: {
-      fontSize: 10,
-      color: "#444",
-    },
-    markerWrap: {
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    marker: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: "rgba(0,153,102, 0.9)",
-    },
-    ring: {
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      backgroundColor: "rgba(0,153,102, 0.5)",
-      position: "absolute",
-      borderWidth: 0.5,
-      borderColor: "rgba(0,153,102, 0.5)",
-    },
+    elevation: 1,
+    backgroundColor: "#fff",
+    marginHorizontal: 5,
+    shadowColor: "rgba(0,72,51, 0.9)",
+    shadowRadius: 5,
+    shadowOpacity: 0.3,
+    shadowOffset: { x: 0, y: 0 },
+    height: Dimensions.get('window').height / 3,
+    width: Dimensions.get('window').width * 0.5,
+  },
+  cardImage: {
+    flex: 5,
+    width: "100%",
+    height: "100%",
+    alignSelf: "center",
+  },
+  textContent: {
+    flex: 1,
+    paddingLeft: 8,
+    paddingTop:8
+  },
+  cardtitle: {
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  cardDescription: {
+    fontSize: 10,
+    color: "#444",
+  },
+  markerWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  marker: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(0,153,102, 0.9)",
+  },
+  ring: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(0,153,102, 0.5)",
+    position: "absolute",
+    borderWidth: 0.5,
+    borderColor: "rgba(0,153,102, 0.5)",
+  },
 });
 const mStyles = MapboxGL.StyleSheet.create({
   icon: {
